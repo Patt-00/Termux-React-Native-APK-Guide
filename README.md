@@ -174,3 +174,7 @@ If `rish` reports a timeout, restart Shizuku, authorize Termux, and remove batte
 ## Security note
 
 Do not commit `android/local.properties`, keystores, access tokens, or device-specific paths. The default React Native `.gitignore` should exclude `local.properties`, build output, and `node_modules`.
+
+## Codex skill package
+
+The reusable Codex skill is in [skill/termux-react-native-apk-build](skill/termux-react-native-apk-build). To use it locally, copy that folder into `~/.codex/skills/`, then start a new Codex session. Other agents can clone this repository and use the same `SKILL.md` package.
