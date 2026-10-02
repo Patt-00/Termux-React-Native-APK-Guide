@@ -24,6 +24,7 @@ Produce an `arm64-v8a` APK that installs and opens without Metro. Keep the work 
 
 - Google Android SDK/NDK host binaries are usually x86_64. Do not attempt to execute them directly on ARM64 Termux.
 - Point Gradle's AAPT2 override to Termux's native `aapt2` binary.
+- If CMake cannot find ReactAndroid despite an extracted Prefab config, inspect `CMAKE_FIND_ROOT_PATH` and the compiler's library architecture. A Termux-only package-dir adjustment may be needed; do not apply one blindly to desktop builds.
 - Do not claim a release build is standalone until `index.android.bundle` is present in the APK.
 - Keep `android/local.properties`, keystores, tokens, `node_modules`, and build output out of Git.
 - Treat Shizuku/rish as optional device-install plumbing. If it is disconnected, build and preserve the APK, report the specific connection issue, and do not falsely report installation.

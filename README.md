@@ -17,7 +17,7 @@ Use a current Termux installation, then install the native build tools:
 
 ```sh
 pkg update
-pkg install nodejs openjdk-17 git curl unzip zip \
+pkg install nodejs openjdk-21 git curl unzip zip \
   cmake ninja make aapt2 d8 apksigner ndk-multilib qemu-user-x86-64
 ```
 
@@ -32,6 +32,7 @@ qemu-x86_64 --version
 ```
 
 `qemu-user-x86-64` is important: React Native currently distributes the Linux Hermes compiler as an x86_64 binary, while most Termux phones are ARM64.
+Use a JDK supported by your project's Android Gradle Plugin; the verified React Native 0.87.1 build used Termux OpenJDK 21. Package names can differ by Termux repository.
 
 ## 2. Create a native React Native project
 
@@ -63,6 +64,7 @@ Google's downloaded Android NDK host tools are normally x86_64, so they cannot r
 4. Set `ndk.dir` in `android/local.properties` to that compatibility layout.
 
 The precise symlinks depend on the installed Termux Clang version and NDK version. Do not copy an x86_64 NDK `prebuilt/linux-x86_64/bin` directory into an ARM64 build unchanged.
+The compatibility layout is a prerequisite, not something `npm install` creates. Verify that its Clang and CMake toolchain files exist before building.
 
 Example `android/local.properties`:
 
@@ -113,12 +115,40 @@ OS not recognized. Please set project.react.hermesCommand
 
 Avoid turning Hermes off as a shortcut unless the JavaScriptCore native libraries are fully configured: recent React Native builds can otherwise fail at runtime because `libhermestooling.so` is not packaged.
 
-## 6. Build the standalone release APK
+## 6. Fix Prefab package lookup on Termux when needed
+
+In a verified React Native 0.87.1 build, CMake reached native configuration but could not find `ReactAndroidConfig.cmake`. The file existed under Gradle's extracted Prefab tree at `lib/aarch64-linux-android/cmake/ReactAndroid/`; Termux Clang reported `aarch64-none-linux-android24` as the library architecture, so automatic package lookup missed that directory. This is a CMake lookup issue, not a missing npm package.
+
+If your build has this specific failure, create `scripts/termux-prefab.cmake`:
+
+```cmake
+if(CMAKE_FIND_ROOT_PATH)
+  list(GET CMAKE_FIND_ROOT_PATH 0 _termux_prefab_root)
+  set(_termux_prefab_cmake
+    "${_termux_prefab_root}/lib/aarch64-linux-android/cmake")
+  foreach(_termux_package ReactAndroid fbjni hermes-engine)
+    set("${_termux_package}_DIR"
+      "${_termux_prefab_cmake}/${_termux_package}")
+  endforeach()
+endif()
+```
+
+In the `defaultConfig { externalNativeBuild { cmake { ... } } }` block of `android/app/build.gradle`, add a Termux-only argument:
+
+```groovy
+if (providers.gradleProperty("termuxBuild").orNull == "true") {
+    arguments "-DCMAKE_PROJECT_INCLUDE=${file('../../scripts/termux-prefab.cmake').absolutePath}"
+}
+```
+
+Pass `-PtermuxBuild=true` to Gradle on the phone. The first entry of `CMAKE_FIND_ROOT_PATH` is the extracted Prefab root; it is a list after the NDK toolchain appends its own path. Keep the adjustment conditional so PC builds retain ordinary CMake package resolution. Check the actual Prefab directory and package names if your React Native version differs.
+
+## 7. Build the standalone release APK
 
 From the `android` directory:
 
 ```sh
-./gradlew assembleRelease --no-daemon
+./gradlew assembleRelease --no-daemon -PtermuxBuild=true
 ```
 
 The APK is written to:
@@ -134,7 +164,9 @@ apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
 unzip -l app/build/outputs/apk/release/app-release.apk | grep index.android.bundle
 ```
 
-## 7. Install through Shizuku / rish
+The React Native 0.87.1 / Android Gradle Plugin 9.2.1 project used to verify this guide built successfully with the Termux Prefab fix. Its APK signature verified, but build success alone does not prove installation or UI behavior on a device.
+
+## 8. Install through Shizuku / rish
 
 First grant Termux storage access:
 
@@ -167,6 +199,7 @@ If `rish` reports a timeout, restart Shizuku, authorize Termux, and remove batte
 | AAPT2 will not execute | Use the Termux `aapt2` override in `gradle.properties`. |
 | `OS not recognized` from Hermes | Use the QEMU Hermes wrapper above. |
 | NDK tools fail with `Exec format error` | Use a Termux-compatible NDK layout, not the Google x86_64 host binaries. |
+| CMake cannot find `ReactAndroidConfig.cmake` even though Prefab extracted it | Check the generated Prefab tree and apply the Termux-only CMake lookup adjustment in section 6. |
 | Release app crashes with a missing Hermes DSO | Build with Hermes enabled so the Hermes native libraries are packaged. |
 | Debug app only opens when Metro is running | Build and install `assembleRelease`; it embeds `index.android.bundle`. |
 | `rish` disconnects | Restart Shizuku and exclude both Shizuku and Termux from battery optimization. |
